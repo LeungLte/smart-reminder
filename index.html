@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#3157a4">
+<link rel="manifest" href="./manifest.webmanifest">
+<title>智能提醒</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f3f6fc;color:#202938;font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif}.wrap{max-width:720px;margin:36px auto;padding:0 16px}h1{text-align:center;margin:12px 0 8px;color:#244783}.sub{text-align:center;color:#667085;margin:0 0 24px}.panel{background:white;border-radius:18px;padding:20px;margin:16px 0;box-shadow:0 5px 24px #203b6810}textarea,input,button{font:inherit}textarea,input{width:100%;border:1px solid #d5dce8;border-radius:11px;padding:12px;background:#fff;color:#202938}textarea{min-height:90px;resize:vertical}label{display:block;font-weight:600;margin:12px 0 6px}button{border:0;border-radius:10px;background:#3157a4;color:#fff;padding:11px 16px;cursor:pointer;font-weight:600}button.secondary{background:#e9eef8;color:#244783}button.danger{background:#fff0f0;color:#b42318}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.hint,.status{font-size:14px;color:#667085;line-height:1.6}.status{margin-top:12px;min-height:22px}.reminder{padding:14px 0;border-bottom:1px solid #edf0f5;display:flex;gap:12px;justify-content:space-between;align-items:center}.reminder:last-child{border-bottom:0}.when{font-size:13px;color:#667085;margin-top:4px}.empty{color:#98a2b3;text-align:center;padding:18px}.pill{font-size:12px;border-radius:99px;padding:4px 8px;background:#edf3ff;color:#3157a4;white-space:nowrap}.warning{background:#fff8e8;border:1px solid #f4dfad;padding:12px;border-radius:12px;color:#795b16;font-size:13px;line-height:1.6}.toprow{display:flex;justify-content:space-between;align-items:center;gap:8px}h2{font-size:18px;margin:0 0 12px}@media(max-width:480px){.wrap{margin:20px auto}.panel{padding:16px}.reminder{align-items:flex-start}}
+</style>
+</head>
+<body>
+<main class="wrap">
+<h1>智能提醒</h1><p class="sub">寫下要做的事，幫你安排日期和時間</p>
+<section class="panel">
+<h2>新增提醒</h2>
+<label for="request">你想提醒自己甚麼？</label>
+<textarea id="request" placeholder="例如：明天下午3點交功課&#10;例如：2026年11月15日早上8點開會"></textarea>
+<div class="actions"><button id="addBtn">安排提醒</button><button class="secondary" id="notifyBtn">開啟通知</button></div>
+<p class="status" id="status" aria-live="polite"></p>
+<p class="hint">支援「今天、明天、後天」、日期及「上午／下午／晚上」時間。</p>
+</section>
+<section class="panel">
+<div class="toprow"><h2>已排定提醒</h2><span class="pill" id="count">0 項</span></div>
+<div id="list"><div class="empty">暫時沒有提醒</div></div>
+</section>
+<section class="warning">
+<strong>通知提示：</strong>此版本使用 GitHub Pages 和你的瀏覽器本機儲存。提醒會保存在目前裝置及瀏覽器。要準時提醒，請保持此網站開啟；如果完全關閉瀏覽器或裝置休眠，通知可能不會送出。GitHub Pages 本身不能在背景執行排程或推送通知。
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const KEY='smart-reminder-items-v1';
+let reminders=readItems();
+let timers=new Map();
+function readItems(){try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch{return []}}
+function save(){localStorage.setItem(KEY,JSON.stringify(reminders));}
+function setStatus(s){$('status').textContent=s;}
+function pad(n){return String(n).padStart(2,'0')}
+function parseRequest(raw){
+ const s=raw.trim(); if(!s)return {error:'請輸入提醒內容。'};
+ const now=new Date(); let date=null;
+ let m=s.match(/(20\d{2})[年\/-](\d{1,2})[月\/-](\d{1,2})日?/);
+ if(m){date=new Date(+m[1],+m[2]-1,+m[3]);}
+ else if(/後天/.test(s)){date=new Date(now.getFullYear(),now.getMonth(),now.getDate()+2);}
+ else if(/明天|聽日/.test(s)){date=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);}
+ else if(/今天|今日/.test(s)){date=new Date(now.getFullYear(),now.getMonth(),now.getDate());}
+ let time=null;
+ m=s.match(/(上午|早上|中午|下午|晚上|夜晚)?\s*(\d{1,2})(?:[:：時點](\d{1,2})分?)?/);
+ if(m){
+   let h=+m[2], min=m[3]?+m[3]:0, period=m[1]||'';
+   if(min>59||h>24)return {error:'時間格式不正確，請再試一次。'};
+   if(/下午|晚上|夜晚/.test(period)&&h<12)h+=12;
+   if(/上午|早上/.test(period)&&h===12)h=0;
+   if(period==='中午'&&h<11)h+=12;
+   if(h<=23){time={h,m:min};}
+ }
+ if(!date && !time)return {error:'這裡沒有日期和時間，請提供。'};
+ if(time&&!date)return {error:'請提供日期，是今天還是其他日子？'};
+ if(date&&!time)return {error:'請提供提醒時間，例如下午3點。'};
+ date.setHours(time.h,time.m,0,0);
+ if(date.getTime()<=Date.now())return {error:'這個日期和時間已經過去，請提供未來時間。'};
+ let title=s.replace(/20\d{2}[年\/-]\d{1,2}[月\/-]\d{1,2}日?/,'').replace(/後天|明天|聽日|今天|今日|上午|早上|中午|下午|晚上|夜晚|\d{1,2}(?:[:：時點]\d{1,2}分?)?/g,' ').replace(/交功課/g,'交功課').replace(/\s+/g,' ').trim();
+ if(!title)title=s;
+ return {title,due:date.getTime()};
+}
+function fmt(ts){return new Date(ts).toLocaleString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});}
+function render(){
+ reminders.sort((a,b)=>a.due-b.due); save(); $('count').textContent=reminders.length+' 項';
+ if(!reminders.length){$('list').innerHTML='<div class="empty">暫時沒有提醒</div>';return;}
+ $('list').innerHTML=reminders.map(x=>'<div class="reminder"><div><strong>'+esc(x.title)+'</strong><div class="when">'+fmt(x.due)+(x.sent?' · 已通知':'')+'</div></div><button class="danger" data-del="'+x.id+'">刪除</button></div>').join('');
+}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function notify(item){
+ if(item.sent)return;
+ if(Notification.permission!=='granted')return;
+ try{const reg=await navigator.serviceWorker.ready;await reg.showNotification('智能提醒：'+item.title,{body:'現在是你設定的提醒時間。',icon:'./icon.svg',tag:'reminder-'+item.id,data:{id:item.id}});item.sent=true;save();render();}catch(e){setStatus('通知未能送出，請檢查瀏覽器通知設定。');}
+}
+function schedule(){
+ for(const t of timers.values())clearTimeout(t);timers.clear();
+ const now=Date.now();
+ reminders.filter(x=>!x.sent&&x.due>now).forEach(x=>{
+  const delay=Math.min(x.due-now,2147480000);
+  timers.set(x.id,setTimeout(()=>{notify(x);schedule();},delay));
+ });
+ reminders.filter(x=>!x.sent&&x.due<=now).forEach(x=>notify(x));
+}
+$('addBtn').addEventListener('click',()=>{
+ const parsed=parseRequest($('request').value);
+ if(parsed.error){setStatus(parsed.error);return;}
+ const item={id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),title:parsed.title,due:parsed.due,sent:false};
+ reminders.push(item);$('request').value='';render();schedule();setStatus('好的，已經幫你排定時間了。');
+});
+$('notifyBtn').addEventListener('click',async()=>{
+ if(!('Notification'in window)){setStatus('此瀏覽器不支援通知。');return;}
+ const p=await Notification.requestPermission();
+ if(p==='granted'){setStatus('通知權限已開啟。');schedule();}
+ else setStatus('你尚未允許通知，請在瀏覽器設定中開啟。');
+});
+$('list').addEventListener('click',e=>{
+ const b=e.target.closest('[data-del]');if(!b)return;
+ reminders=reminders.filter(x=>x.id!==b.dataset.del);render();schedule();setStatus('已刪除提醒。');
+});
+if('serviceWorker'in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{});}
+render();schedule();
+</script>
+</body></html>
